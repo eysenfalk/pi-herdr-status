@@ -1,0 +1,17 @@
+name: Question
+description: Ask about setup, behavior, or compatibility
+title: "question: "
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Do not include prompts, transcripts, credentials, tool data, or private paths.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Relevant versions
+      placeholder: Package, Pi, Herdr, Node.js, operating system

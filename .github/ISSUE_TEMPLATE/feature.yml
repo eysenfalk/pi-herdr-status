@@ -1,0 +1,26 @@
+name: Feature request
+description: Propose a focused status or compatibility improvement
+title: "feature: "
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Which observable status failure should be solved?
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Ownership boundary
+      description: Explain how Herdr's managed integration remains the sole lifecycle authority.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and alternatives
+      description: Include content-free reproduction evidence and simpler alternatives considered.
+    validations:
+      required: true

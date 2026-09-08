@@ -1,0 +1,49 @@
+name: Bug report
+description: Report an incorrect Pi/Herdr status transition
+title: "bug: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: Never include credentials, prompts, transcripts, tool data, session files, or raw socket traffic.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Package, Pi, Herdr, Node.js, and operating-system versions.
+      placeholder: pi-herdr-status 1.0.0; Pi 0.85.1; Herdr 0.9.0; Node 22; Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: managed
+    attributes:
+      label: Official integration installed?
+      options:
+        - Yes, via `herdr integration install pi`
+        - No or unsure
+    validations:
+      required: true
+  - type: textarea
+    id: timeline
+    attributes:
+      label: Content-free status timeline
+      description: List only expected and observed states and timing.
+      placeholder: Expected done → blocked → done; observed done → working → done.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Do not paste prompts or private terminal output.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I reproduced this in a fresh Herdr-managed Pi session after `/reload`.
+          required: true
+        - label: This report contains no sensitive prompt, transcript, credential, tool, path, or socket data.
+          required: true

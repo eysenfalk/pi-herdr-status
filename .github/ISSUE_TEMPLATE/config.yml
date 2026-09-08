@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/eysenfalk/pi-herdr-status/security/advisories/new
+    about: Report vulnerabilities privately; never disclose sensitive details in a public issue.
+  - name: Support guide
+    url: https://github.com/eysenfalk/pi-herdr-status/blob/main/SUPPORT.md
+    about: Read the support and privacy guidance before sharing diagnostics.

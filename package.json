@@ -1,0 +1,73 @@
+{
+	"name": "@eysenfalk/pi-herdr-status",
+	"version": "1.0.0-rc.0",
+	"description": "Keep Herdr's Pi status accurate through prompts and dropped lifecycle reports.",
+	"type": "module",
+	"license": "MIT",
+	"author": "Falk (https://github.com/eysenfalk)",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/eysenfalk/pi-herdr-status.git"
+	},
+	"homepage": "https://github.com/eysenfalk/pi-herdr-status#readme",
+	"bugs": {
+		"url": "https://github.com/eysenfalk/pi-herdr-status/issues"
+	},
+	"keywords": [
+		"pi-package",
+		"pi",
+		"pi-coding-agent",
+		"herdr",
+		"status",
+		"lifecycle",
+		"terminal",
+		"tui",
+		"developer-tools"
+	],
+	"engines": {
+		"node": ">=22"
+	},
+	"files": [
+		"extensions/pi-herdr-status",
+		"docs",
+		"media",
+		"CHANGELOG.md",
+		"LICENSE",
+		"README.md",
+		"SECURITY.md"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"check": "npm run lint && npm run typecheck && npm test && npm run docs:check && npm run workflow:check && npm run package:check",
+		"docs:check": "node scripts/check-docs.mjs",
+		"format": "biome check --write .",
+		"media:render": "node scripts/render-media.mjs",
+		"lint": "biome check .",
+		"package:check": "node scripts/check-package.mjs",
+		"smoke:packed": "node scripts/smoke-packed-pi.mjs",
+		"test": "node --experimental-strip-types --test tests/*.test.ts",
+		"test:coverage": "node --experimental-strip-types --test --experimental-test-coverage tests/*.test.ts",
+		"typecheck": "tsc --noEmit",
+		"workflow:check": "node scripts/check-workflows.mjs",
+		"prepublishOnly": "npm run check"
+	},
+	"pi": {
+		"extensions": [
+			"./extensions/pi-herdr-status/index.ts"
+		],
+		"image": "https://raw.githubusercontent.com/eysenfalk/pi-herdr-status/main/media/gallery.webp"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.12",
+		"@earendil-works/pi-coding-agent": "0.85.1",
+		"@resvg/resvg-js": "2.6.2",
+		"@types/node": "22.20.0",
+		"sharp": "0.35.4",
+		"typescript": "5.9.3"
+	}
+}
