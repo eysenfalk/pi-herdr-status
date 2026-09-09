@@ -1,19 +1,21 @@
 Pi Herdr Status · faithful cropped 120-column capture excerpt
-Pi 0.85.1 · Herdr 0.9.0
-content-free test prompt shown; private prompts, paths, model, and footer absent
+Pi 0.85.1 · Herdr 0.9.0 · pi-subagents 0.66.0
+content-free async validation; private prompts, paths, model, and footer absent
 
 [Extensions]
-  pi-herdr-status, prompt-driver.ts
+  pi-herdr-status, pi-subagents
 
 ────────────────────────────────────────────────────────
 
- Status demo
- Continue?
+ subagent worker-luna [async]
+ Launched worker-luna asynchronously
 
- → Yes
-   No
+ async subagent · background
+   ⠙ worker-luna · running
 
- ↑↓ navigate  enter select  escape/ctrl+c cancel
+ Done.
+   ✓ worker-luna · complete
 
-Herdr observer: done → blocked → done
-Herdr authority: screen_detection_skipped=true (managed lifecycle integration)
+Herdr observer: idle → working → idle
+Key proof: parent settled while child ran; semantic status remained working
+Herdr authority: source=herdr:pi · screen_detection_skipped=true

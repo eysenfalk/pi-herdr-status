@@ -1,34 +1,34 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1200 600" role="img" aria-labelledby="title desc">
-  <title id="title">Pi Herdr Status lifecycle demo</title>
-  <desc id="desc">A faithful cropped redraw of a content-free Pi confirmation observed by Herdr as done, blocked, then done; private prompt content and environment details are absent.</desc>
+  <title id="title">Pi Herdr Status async lifecycle demo</title>
+  <desc id="desc">A faithful cropped redraw of a content-free Pi async subagent run observed by Herdr as idle, working while the parent is settled, then idle.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#070b12"/><stop offset="1" stop-color="#101827"/></linearGradient>
     <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#70e1f5"/><stop offset="1" stop-color="#b88cff"/></linearGradient>
     <filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#000" flood-opacity=".45"/></filter>
   </defs>
-  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="600" fill="url(#bg)"/>
   <circle cx="1025" cy="72" r="210" fill="#7c5cff" opacity=".08"/>
   <circle cx="140" cy="580" r="250" fill="#43d9c5" opacity=".06"/>
   <text x="64" y="72" fill="#f3f7ff" font-family="Inter, ui-sans-serif, sans-serif" font-size="28" font-weight="700">PI HERDR STATUS</text>
-  <rect x="936" y="43" width="200" height="42" rx="21" fill="#132f2d" stroke="#48d6bd"/>
-  <circle cx="961" cy="64" r="6" fill="#48d6bd"/>
-  <text x="979" y="70" fill="#9bf4e3" font-family="Inter, ui-sans-serif, sans-serif" font-size="17" font-weight="650">UPDATE-SAFE</text>
-  <text x="64" y="132" fill="url(#accent)" font-family="Inter, ui-sans-serif, sans-serif" font-size="43" font-weight="760">Make Herdr tell the truth about Pi.</text>
-  <text x="66" y="169" fill="#9ba9bd" font-family="Inter, ui-sans-serif, sans-serif" font-size="20">Native prompts become blocked. Dropped lifecycle reports recover.</text>
+  <rect x="896" y="43" width="240" height="42" rx="21" fill="#132f2d" stroke="#48d6bd"/>
+  <circle cx="921" cy="64" r="6" fill="#48d6bd"/>
+  <text x="939" y="70" fill="#9bf4e3" font-family="Inter, ui-sans-serif, sans-serif" font-size="16" font-weight="650">SINGLE AUTHORITY</text>
+  <text x="64" y="132" fill="url(#accent)" font-family="Inter, ui-sans-serif, sans-serif" font-size="43" font-weight="760">Async work stays working.</text>
+  <text x="66" y="169" fill="#9ba9bd" font-family="Inter, ui-sans-serif, sans-serif" font-size="20">The parent settles. Herdr still sees the running subagent.</text>
 
   <g filter="url(#shadow)">
     <rect x="64" y="205" width="700" height="330" rx="18" fill="#0b111c" stroke="#26354a"/>
     <rect x="64" y="205" width="700" height="52" rx="18" fill="#121b29"/>
     <rect x="64" y="239" width="700" height="18" fill="#121b29"/>
     <circle cx="92" cy="231" r="6" fill="#ff6b6b"/><circle cx="113" cy="231" r="6" fill="#ffd166"/><circle cx="134" cy="231" r="6" fill="#48d6bd"/>
-    <text x="166" y="238" fill="#8190a7" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">pi v0.85.1 · 120 columns</text>
-    <text x="96" y="300" fill="#68788f" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16">────────────────────────────────────────────────────────</text>
-    <text x="96" y="346" fill="#f4f7fb" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20">Status demo</text>
-    <text x="96" y="377" fill="#d4dbe6" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">Continue?</text>
-    <rect x="86" y="401" width="180" height="34" rx="7" fill="#1b2b3f"/>
-    <text x="101" y="425" fill="#78e4d1" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">→ Yes</text>
-    <text x="101" y="460" fill="#aab6c8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">  No</text>
-    <text x="96" y="502" fill="#6f8098" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14">↑↓ navigate  enter select  escape/ctrl+c cancel</text>
+    <text x="166" y="238" fill="#8190a7" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">Pi 0.85.1 · pi-subagents 0.66.0 · 120 columns</text>
+    <text x="96" y="294" fill="#68788f" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16">────────────────────────────────────────────────────────</text>
+    <text x="96" y="334" fill="#d4dbe6" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17">subagent worker-luna [async]</text>
+    <text x="96" y="370" fill="#78e4d1" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17">Launched worker-luna asynchronously</text>
+    <rect x="86" y="395" width="500" height="66" rx="9" fill="#142032" stroke="#263b55"/>
+    <text x="103" y="422" fill="#aab6c8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16">async subagent · background</text>
+    <text x="103" y="448" fill="#d6c8ff" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17">⠙ worker-luna · running</text>
+    <text x="96" y="497" fill="#9bf4e3" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17">✓ worker-luna · complete</text>
   </g>
 
   <g filter="url(#shadow)">
@@ -36,15 +36,16 @@
     <text x="824" y="246" fill="#8fa0b8" font-family="Inter, ui-sans-serif, sans-serif" font-size="15" font-weight="650" letter-spacing="2">HERDR OBSERVER</text>
     <line x1="843" y1="292" x2="843" y2="455" stroke="#314157" stroke-width="3"/>
     <circle cx="843" cy="303" r="10" fill="#48d6bd"/>
-    <text x="875" y="310" fill="#c6d0dd" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">done</text>
-    <text x="875" y="333" fill="#68788f" font-family="Inter, ui-sans-serif, sans-serif" font-size="14">before prompt</text>
+    <text x="875" y="310" fill="#c6d0dd" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">idle</text>
+    <text x="875" y="333" fill="#68788f" font-family="Inter, ui-sans-serif, sans-serif" font-size="14">before launch</text>
     <circle cx="843" cy="383" r="12" fill="#b88cff"/>
     <rect x="870" y="359" width="220" height="48" rx="10" fill="#251d3d" stroke="#8f70d8"/>
-    <text x="888" y="389" fill="#d6c8ff" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="700">blocked</text>
+    <text x="888" y="389" fill="#d6c8ff" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="700">working</text>
+    <text x="875" y="429" fill="#8f9eb2" font-family="Inter, ui-sans-serif, sans-serif" font-size="14">parent already settled</text>
     <circle cx="843" cy="463" r="10" fill="#48d6bd"/>
-    <text x="875" y="470" fill="#c6d0dd" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">done</text>
-    <text x="875" y="493" fill="#68788f" font-family="Inter, ui-sans-serif, sans-serif" font-size="14">after response</text>
+    <text x="875" y="470" fill="#c6d0dd" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">idle</text>
+    <text x="875" y="493" fill="#68788f" font-family="Inter, ui-sans-serif, sans-serif" font-size="14">after final completion</text>
   </g>
 
-  <text x="64" y="588" fill="#93a3b9" font-family="Inter, ui-sans-serif, sans-serif" font-size="14">faithful cropped transcript redraw · Pi 0.85.1 + Herdr 0.9.0 · content-free test prompt shown</text>
+  <text x="64" y="580" fill="#93a3b9" font-family="Inter, ui-sans-serif, sans-serif" font-size="14">faithful cropped transcript redraw · Pi 0.85.1 + Herdr 0.9.0 · content-free async validation</text>
 </svg>

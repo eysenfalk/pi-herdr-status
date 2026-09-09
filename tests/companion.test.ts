@@ -1,313 +1,315 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
-import { createServer, type Socket } from "node:net";
+import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { INITIAL_BRIDGE_STATE, transitionBridge } from "../extensions/pi-herdr-status/core.ts";
-import { herdrSocketEndpoint, readHerdrPaneState } from "../extensions/pi-herdr-status/herdr-rpc.ts";
-import piHerdrStatus from "../extensions/pi-herdr-status/index.ts";
 import {
-	activeAtSessionStart,
-	type BlockedReport,
-	LifecycleRecovery,
-	shouldAcceptSettled,
-} from "../extensions/pi-herdr-status/recovery.ts";
+	desiredState,
+	INITIAL_LIFECYCLE_STATE,
+	sanitizeStatusLabel,
+	transitionLifecycle,
+} from "../extensions/pi-herdr-status/core.ts";
+import { herdrSocketEndpoint, sendHerdrRequest } from "../extensions/pi-herdr-status/herdr-rpc.ts";
+import piHerdrStatus from "../extensions/pi-herdr-status/index.ts";
+import { ReliableHerdrReporter } from "../extensions/pi-herdr-status/recovery.ts";
 
-test("pure bridge reports one balanced blocked span", () => {
-	let result = transitionBridge(INITIAL_BRIDGE_STATE, { type: "session_start", mode: "tui" });
-	assert.equal(result.report, undefined);
+function started(active = false) {
+	return transitionLifecycle(INITIAL_LIFECYCLE_STATE, { type: "session_start", mode: "tui", active });
+}
 
-	result = transitionBridge(result.state, { type: "prompt_start", kind: "confirm" });
-	assert.deepEqual(result.report, {
+test("root lifecycle reports working then idle only after accepted settlement", () => {
+	let state = started();
+	assert.deepEqual(desiredState(state), { state: "idle" });
+	state = transitionLifecycle(state, { type: "agent_start" });
+	assert.deepEqual(desiredState(state), { state: "working", message: undefined });
+	state = transitionLifecycle(state, { type: "agent_settled", idle: false });
+	assert.deepEqual(desiredState(state), { state: "working", message: undefined });
+	state = transitionLifecycle(state, { type: "agent_settled", idle: true });
+	assert.deepEqual(desiredState(state), { state: "idle" });
+});
+
+test("async busy lease keeps a settled parent semantically working", () => {
+	let state = started();
+	state = transitionLifecycle(state, { type: "busy", active: true, label: "⏳ 1 subagent (worker)" });
+	state = transitionLifecycle(state, { type: "agent_settled", idle: true });
+	assert.deepEqual(desiredState(state), { state: "working", message: "⏳ 1 subagent (worker)" });
+	state = transitionLifecycle(state, { type: "busy", active: false });
+	assert.deepEqual(desiredState(state), { state: "idle" });
+});
+
+test("overlapping busy owners are counted independently", () => {
+	let state = started();
+	state = transitionLifecycle(state, { type: "busy", active: true, label: "first" });
+	state = transitionLifecycle(state, { type: "busy", active: true, label: "second" });
+	state = transitionLifecycle(state, { type: "busy", active: false });
+	assert.equal(state.busyCount, 1);
+	assert.deepEqual(desiredState(state), { state: "working", message: undefined });
+	state = transitionLifecycle(state, { type: "busy", active: false });
+	state = transitionLifecycle(state, { type: "busy", active: false });
+	assert.equal(state.busyCount, 0);
+	assert.equal(desiredState(state)?.state, "idle");
+});
+
+test("partial blocker release clears an ambiguous owner label", () => {
+	let state = started();
+	state = transitionLifecycle(state, { type: "blocked", active: true, label: "first" });
+	state = transitionLifecycle(state, { type: "blocked", active: true, label: "second" });
+	state = transitionLifecycle(state, { type: "blocked", active: false });
+	assert.equal(state.blockedCount, 1);
+	assert.deepEqual(desiredState(state), { state: "blocked", message: undefined });
+	state = transitionLifecycle(state, { type: "blocked", active: false });
+	assert.deepEqual(desiredState(state), { state: "idle" });
+});
+
+test("final busy release preserves an active parent", () => {
+	let state = started(true);
+	state = transitionLifecycle(state, { type: "busy", active: true, label: "background work" });
+	state = transitionLifecycle(state, { type: "busy", active: false });
+	assert.deepEqual(desiredState(state), { state: "working", message: undefined });
+});
+
+test("busy restoration works before or after session start", () => {
+	let busyFirst = transitionLifecycle(INITIAL_LIFECYCLE_STATE, {
+		type: "busy",
 		active: true,
-		label: "Waiting for user confirmation",
+		label: "restored async work",
 	});
+	busyFirst = transitionLifecycle(busyFirst, { type: "session_start", mode: "tui", active: false });
+	assert.deepEqual(desiredState(busyFirst), { state: "working", message: "restored async work" });
 
-	const duplicate = transitionBridge(result.state, { type: "prompt_start", kind: "confirm" });
-	assert.equal(duplicate.report, undefined);
-
-	result = transitionBridge(duplicate.state, { type: "prompt_end" });
-	assert.deepEqual(result.report, { active: false });
-	assert.equal(transitionBridge(result.state, { type: "prompt_end" }).report, undefined);
+	let sessionFirst = started();
+	sessionFirst = transitionLifecycle(sessionFirst, { type: "busy", active: true, label: "restored async work" });
+	assert.deepEqual(desiredState(sessionFirst), { state: "working", message: "restored async work" });
 });
 
-test("pure bridge ignores headless sessions", () => {
-	const started = transitionBridge(INITIAL_BRIDGE_STATE, { type: "session_start", mode: "rpc" });
-	const prompt = transitionBridge(started.state, { type: "prompt_start", kind: "select" });
-	assert.equal(prompt.report, undefined);
+test("prompt and external attention override busy without consuming it", () => {
+	let state = started();
+	state = transitionLifecycle(state, { type: "busy", active: true, label: "background work" });
+	state = transitionLifecycle(state, { type: "blocked", active: true, label: "subagent needs attention" });
+	assert.deepEqual(desiredState(state), { state: "blocked", message: "subagent needs attention" });
+	state = transitionLifecycle(state, { type: "prompt_start", kind: "confirm" });
+	assert.deepEqual(desiredState(state), { state: "blocked", message: "Waiting for user confirmation" });
+	state = transitionLifecycle(state, { type: "prompt_end" });
+	state = transitionLifecycle(state, { type: "blocked", active: false });
+	assert.deepEqual(desiredState(state), { state: "working", message: "background work" });
 });
 
-test("pure bridge clears an open prompt on shutdown", () => {
-	const started = transitionBridge(INITIAL_BRIDGE_STATE, { type: "session_start", mode: "tui" });
-	const prompt = transitionBridge(started.state, { type: "prompt_start", kind: "custom" });
-	const shutdown = transitionBridge(prompt.state, { type: "session_shutdown" });
-	assert.deepEqual(shutdown.report, { active: false });
-	assert.deepEqual(shutdown.state, INITIAL_BRIDGE_STATE);
+test("native prompts use fixed labels and never inspect prompt content", () => {
+	let state = started();
+	state = transitionLifecycle(state, { type: "prompt_start", kind: "input" });
+	assert.deepEqual(desiredState(state), { state: "blocked", message: "Waiting for user input" });
+	state = transitionLifecycle(state, { type: "prompt_end" });
+	assert.deepEqual(desiredState(state), { state: "idle" });
 });
 
-test("confirmed stale state triggers one balanced recovery pulse", async () => {
-	const reports: BlockedReport[] = [];
-	let blockedCount = 0;
-	let scheduled: (() => void) | undefined;
-	const recovery = new LifecycleRecovery({
-		readObservedState: async () => "working",
-		emitBlocked: (report) => {
-			reports.push(report);
-			blockedCount = report.active ? blockedCount + 1 : Math.max(0, blockedCount - 1);
-		},
-		schedule: (callback) => {
-			scheduled = callback;
-			return () => {};
+test("headless sessions and malformed sibling events stay inert", () => {
+	let state = transitionLifecycle(INITIAL_LIFECYCLE_STATE, { type: "busy", active: "yes", label: "ignored" });
+	state = transitionLifecycle(state, { type: "session_start", mode: "rpc", active: true });
+	assert.equal(desiredState(state), undefined);
+	assert.equal(state.busyCount, 0);
+});
+
+test("status labels strip controls, normalize whitespace, and are bounded", () => {
+	assert.equal(sanitizeStatusLabel("  hello\n\u0000 world  "), "hello world");
+	assert.equal([...(sanitizeStatusLabel("x".repeat(300)) ?? "")].length, 160);
+	assert.equal(sanitizeStatusLabel(42), undefined);
+});
+
+test("reliable reporter serializes session before state and increases sequence", async () => {
+	const requests: Record<string, any>[] = [];
+	const reporter = new ReliableHerdrReporter({
+		paneId: "w1:p1",
+		send: async (request) => {
+			requests.push(request);
+			return true;
 		},
 	});
-
-	recovery.start("tui");
-	assert.deepEqual(reports, []);
-	scheduled?.();
-	await new Promise((resolve) => setImmediate(resolve));
-	assert.deepEqual(reports, [{ active: true, label: "Synchronizing Herdr state" }, { active: false }]);
-	assert.equal(blockedCount, 0);
+	reporter.queueSession({ agent_session_id: "session-1" }, "startup");
+	reporter.queueState({ state: "working", message: "background" });
+	await reporter.flush();
+	assert.deepEqual(
+		requests.map((request) => request.method),
+		["pane.report_agent_session", "pane.report_agent"],
+	);
+	assert.ok(requests[1]?.params.seq > requests[0]?.params.seq);
+	assert.equal(requests[1]?.params.agent_session_id, "session-1");
+	reporter.dispose();
 });
 
-test("recovery corrects stale state and backs off boundedly", async () => {
-	const reports: BlockedReport[] = [];
-	const scheduled: Array<{ delay: number; callback: () => void; cancelled: boolean }> = [];
-	const observed = [undefined, "working", "done"];
-	const recovery = new LifecycleRecovery({
-		readObservedState: async () => observed.shift(),
-		emitBlocked: (report) => reports.push(report),
-		initialDelayMs: 10,
-		heartbeatMs: 1_000,
-		retryDelaysMs: [20, 40],
+test("session replacement aborts stale state and republishes it after the new session", async () => {
+	const delivered: Array<{ method: string; session?: string; state?: string }> = [];
+	let staleStateStarted!: () => void;
+	const staleStateReady = new Promise<void>((resolve) => {
+		staleStateStarted = resolve;
+	});
+	const reporter = new ReliableHerdrReporter({
+		paneId: "w1:p1",
+		send: (request, _timeout, signal) => {
+			const params = request.params as any;
+			if (request.method === "pane.report_agent" && params.agent_session_id === "session-1") {
+				staleStateStarted();
+				return new Promise((resolve) => signal.addEventListener("abort", () => resolve(false), { once: true }));
+			}
+			delivered.push({ method: request.method as string, session: params.agent_session_id, state: params.state });
+			return Promise.resolve(true);
+		},
+	});
+	reporter.queueSession({ agent_session_id: "session-1" }, "startup");
+	reporter.queueState({ state: "working" });
+	await staleStateReady;
+	reporter.queueSession({ agent_session_id: "session-2" }, "switch");
+	await reporter.flush();
+	assert.deepEqual(delivered, [
+		{ method: "pane.report_agent_session", session: "session-1", state: undefined },
+		{ method: "pane.report_agent_session", session: "session-2", state: undefined },
+		{ method: "pane.report_agent", session: "session-2", state: "working" },
+	]);
+	reporter.dispose();
+});
+
+test("reliable reporter retries a failed latest state with bounded backoff", async () => {
+	const attempts: string[] = [];
+	const scheduled: Array<{ delay: number; callback: () => void }> = [];
+	const reporter = new ReliableHerdrReporter({
+		paneId: "w1:p1",
+		send: async (request) => {
+			attempts.push((request.params as any).state);
+			return attempts.length > 2;
+		},
+		retryDelaysMs: [25, 50],
 		schedule: (callback, delay) => {
-			const task = { delay, callback, cancelled: false };
-			scheduled.push(task);
-			return () => {
-				task.cancelled = true;
-			};
-		},
-	});
-	const runLatest = async () => {
-		const task = scheduled.find((candidate) => !candidate.cancelled);
-		assert.ok(task);
-		task.cancelled = true;
-		task.callback();
-		await new Promise((resolve) => setImmediate(resolve));
-	};
-
-	recovery.start("tui");
-	assert.equal(scheduled[0]?.delay, 10);
-	await runLatest();
-	assert.deepEqual(reports, []);
-	assert.equal(scheduled.at(-1)?.delay, 20);
-	await runLatest();
-	assert.deepEqual(reports, [{ active: true, label: "Synchronizing Herdr state" }, { active: false }]);
-	assert.equal(scheduled.at(-1)?.delay, 40);
-	await runLatest();
-	assert.equal(scheduled.at(-1)?.delay, 1_000);
-	assert.equal(recovery.snapshot().consecutiveFailures, 0);
-});
-
-test("a legitimate independent blocker suppresses every recovery pulse", async () => {
-	const reports: BlockedReport[] = [];
-	let scheduled: (() => void) | undefined;
-	const recovery = new LifecycleRecovery({
-		readObservedState: async () => "working",
-		emitBlocked: (report) => reports.push(report),
-		schedule: (callback) => {
-			scheduled = callback;
+			scheduled.push({ delay, callback });
 			return () => {};
 		},
 	});
-	const reconcile = async () => {
-		scheduled?.();
-		await new Promise((resolve) => setImmediate(resolve));
-	};
-
-	recovery.start("tui");
-	recovery.externalBlockedChanged(true);
-	await reconcile();
-	recovery.agentStarted();
-	await reconcile();
-	recovery.agentSettled();
-	await reconcile();
-	recovery.promptStarted("Waiting for user confirmation");
-	await reconcile();
-	recovery.promptEnded();
-	await reconcile();
-
-	assert.deepEqual(reports, []);
-	assert.equal(recovery.snapshot().observed, "working");
-	assert.equal(recovery.snapshot().externalBlockers, 1);
-	assert.equal(recovery.snapshot().consecutiveFailures, 0);
+	reporter.queueState({ state: "idle" });
+	await reporter.flush();
+	assert.deepEqual(attempts, ["idle", "idle"]);
+	assert.equal(scheduled[0]?.delay, 25);
+	scheduled.shift()?.callback();
+	await reporter.flush();
+	assert.equal(attempts.at(-1), "idle");
+	assert.equal(reporter.snapshot().stateDirty, false);
+	reporter.dispose();
 });
 
-test("repeated TUI session start preserves foreign blockers", async () => {
-	const reports: BlockedReport[] = [];
-	let scheduled: (() => void) | undefined;
-	const recovery = new LifecycleRecovery({
-		readObservedState: async () => "working",
-		emitBlocked: (report) => reports.push(report),
-		schedule: (callback) => {
-			scheduled = callback;
-			return () => {};
+test("a newer state aborts stale delivery and wins", async () => {
+	const delivered: string[] = [];
+	let releaseFirst!: () => void;
+	const reporter = new ReliableHerdrReporter({
+		paneId: "w1:p1",
+		send: (request, _timeout, signal) => {
+			const state = (request.params as any).state as string;
+			if (state === "working") {
+				return new Promise((resolve) => {
+					releaseFirst = () => resolve(false);
+					signal.addEventListener("abort", () => resolve(false), { once: true });
+				});
+			}
+			delivered.push(state);
+			return Promise.resolve(true);
 		},
 	});
-
-	recovery.start("tui");
-	recovery.externalBlockedChanged(true);
-	recovery.start("tui");
-	scheduled?.();
+	reporter.queueState({ state: "working" });
 	await new Promise((resolve) => setImmediate(resolve));
-	assert.equal(recovery.snapshot().externalBlockers, 1);
-	assert.deepEqual(reports, []);
+	reporter.queueState({ state: "idle" });
+	releaseFirst();
+	await reporter.flush();
+	assert.deepEqual(delivered, ["idle"]);
+	reporter.dispose();
 });
 
-test("session start mirrors the managed hook's idle authority", () => {
-	assert.equal(activeAtSessionStart(false), true);
-	assert.equal(activeAtSessionStart(true), false);
-	assert.equal(activeAtSessionStart(undefined), false);
-});
-
-test("settlement is accepted only when Pi is actually idle", () => {
-	assert.equal(shouldAcceptSettled(true), true);
-	assert.equal(shouldAcceptSettled(false), false);
-	assert.equal(shouldAcceptSettled(undefined), false);
-});
-
-test("active reload accepts observed working without recovery", async () => {
-	const reports: BlockedReport[] = [];
-	let scheduled: (() => void) | undefined;
-	const recovery = new LifecycleRecovery({
-		readObservedState: async () => "working",
-		emitBlocked: (report) => reports.push(report),
-		schedule: (callback) => {
-			scheduled = callback;
-			return () => {};
-		},
-	});
-
-	recovery.start("tui", true);
-	scheduled?.();
-	await new Promise((resolve) => setImmediate(resolve));
-	assert.equal(recovery.snapshot().expected, "working");
-	assert.deepEqual(reports, []);
-});
-
-test("state changes cancel stale reconciliation work", async () => {
-	let resolveRead!: (value: string | undefined) => void;
-	let observedSignal: AbortSignal | undefined;
-	const reports: BlockedReport[] = [];
-	let scheduled: (() => void) | undefined;
-	const recovery = new LifecycleRecovery({
-		readObservedState: (signal) => {
-			observedSignal = signal;
-			return new Promise((resolve) => (resolveRead = resolve));
-		},
-		emitBlocked: (report) => reports.push(report),
-		schedule: (callback) => {
-			scheduled = callback;
-			return () => {};
-		},
-	});
-
-	recovery.start("tui");
-	scheduled?.();
-	recovery.agentStarted();
-	assert.equal(observedSignal?.aborted, true);
-	resolveRead("working");
-	await new Promise((resolve) => setImmediate(resolve));
-	assert.deepEqual(reports, []);
-	assert.equal(recovery.snapshot().expected, "working");
-});
-
-test("recovery aborts an active read before starting another", async () => {
+test("disposing during delivery aborts the socket work without stale retry", async () => {
+	let aborted = false;
 	const scheduled: Array<() => void> = [];
-	let active = 0;
-	let maximumActive = 0;
-	const recovery = new LifecycleRecovery({
-		readObservedState: (signal) =>
+	const reporter = new ReliableHerdrReporter({
+		paneId: "w1:p1",
+		send: (_request, _timeout, signal) =>
 			new Promise((resolve) => {
-				active += 1;
-				maximumActive = Math.max(maximumActive, active);
 				signal.addEventListener(
 					"abort",
 					() => {
-						active -= 1;
-						resolve(undefined);
+						aborted = true;
+						resolve(false);
 					},
 					{ once: true },
 				);
 			}),
-		emitBlocked: () => {},
 		schedule: (callback) => {
 			scheduled.push(callback);
 			return () => {};
 		},
 	});
-
-	recovery.start("tui");
-	scheduled.shift()?.();
-	assert.equal(active, 1);
-	recovery.agentStarted();
-	assert.equal(active, 0);
-	scheduled.shift()?.();
-	assert.equal(active, 1);
-	assert.equal(maximumActive, 1);
-	recovery.stop();
-	assert.equal(active, 0);
+	reporter.queueState({ state: "working" });
 	await new Promise((resolve) => setImmediate(resolve));
+	reporter.dispose();
+	await reporter.flush();
+	assert.equal(aborted, true);
+	assert.deepEqual(scheduled, []);
+	assert.equal(reporter.snapshot().disposed, true);
 });
 
-test("pane.get RPC returns only the semantic agent status", async () => {
-	const directory = await mkdtemp(join(tmpdir(), "herdr-companion-rpc-"));
-	const socketPath = join(directory, "daemon.sock");
-	const server = createServer((socket) => {
-		let buffer = "";
-		socket.setEncoding("utf8");
-		socket.on("data", (chunk) => {
-			buffer += chunk;
-			if (!buffer.includes("\n")) return;
-			const request = JSON.parse(buffer.slice(0, buffer.indexOf("\n")));
-			assert.equal(request.method, "pane.get");
-			assert.deepEqual(request.params, { pane_id: "w1:p2" });
-			socket.end(
-				`${JSON.stringify({ id: request.id, result: { type: "pane_info", pane: { agent_status: "done", cwd: "/secret/not-forwarded" } } })}\n`,
-			);
-		});
+test("heartbeat republishes the current authoritative state and stops on disposal", async () => {
+	const callbacks: Array<() => void> = [];
+	let reports = 0;
+	let cleared = 0;
+	const reporter = new ReliableHerdrReporter({
+		paneId: "w1:p1",
+		send: async () => {
+			reports += 1;
+			return true;
+		},
+		intervals: {
+			setInterval: ((callback: () => void) => {
+				callbacks.push(callback);
+				return { unref() {} };
+			}) as any,
+			clearInterval: (() => {
+				cleared += 1;
+			}) as any,
+		},
 	});
-	await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-	try {
-		assert.equal(await readHerdrPaneState(socketPath, "w1:p2", 250), "done");
-	} finally {
-		await new Promise<void>((resolve) => server.close(() => resolve()));
-		await rm(directory, { recursive: true, force: true });
-	}
+	reporter.queueState({ state: "idle" });
+	reporter.startHeartbeat(() => ({ state: "idle" }), 30_000);
+	await reporter.flush();
+	callbacks[0]?.();
+	await reporter.flush();
+	assert.equal(reports, 2);
+	reporter.dispose();
+	assert.equal(cleared, 1);
 });
 
-test("pane.get RPC supports cancellation and Windows endpoint normalization", async () => {
-	const directory = await mkdtemp(join(tmpdir(), "herdr-companion-abort-"));
+test("Herdr RPC requires a matching non-error acknowledgement", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "pi-herdr-status-rpc-"));
 	const socketPath = join(directory, "daemon.sock");
-	let accepted!: () => void;
-	const acceptedConnection = new Promise<void>((resolve) => (accepted = resolve));
-	const server = createServer(() => accepted());
-	await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-	const controller = new AbortController();
+	let server: Server | undefined;
 	try {
-		const pending = readHerdrPaneState(socketPath, "w1:p2", 5_000, controller.signal);
-		await acceptedConnection;
-		controller.abort();
-		assert.equal(await pending, undefined);
+		server = createServer((socket) =>
+			respondToRequest(socket, (request) => ({ id: request.id, result: { ok: true } })),
+		);
+		const acceptingServer = server;
+		await new Promise<void>((resolve) => acceptingServer.listen(socketPath, resolve));
+		assert.equal(await sendHerdrRequest(socketPath, { method: "pane.report_agent", params: {} }, 500), true);
+		await new Promise<void>((resolve) => acceptingServer.close(() => resolve()));
+		server = createServer((socket) =>
+			respondToRequest(socket, (request) => ({ id: request.id, error: { message: "rejected" } })),
+		);
+		const rejectingServer = server;
+		await new Promise<void>((resolve) => rejectingServer.listen(socketPath, resolve));
+		assert.equal(await sendHerdrRequest(socketPath, { method: "pane.report_agent", params: {} }, 500), false);
 		assert.equal(herdrSocketEndpoint("herdr-test", "win32"), "\\\\.\\pipe\\herdr-test");
 	} finally {
-		await new Promise<void>((resolve) => server.close(() => resolve()));
+		if (server?.listening) {
+			const openServer = server;
+			await new Promise<void>((resolve) => openServer.close(() => resolve()));
+		}
 		await rm(directory, { recursive: true, force: true });
 	}
 });
 
-test("pane.get RPC rejects oversized responses before parsing", async () => {
-	const directory = await mkdtemp(join(tmpdir(), "pi-herdr-status-oversized-"));
+test("Herdr RPC rejects oversized responses and supports cancellation", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "pi-herdr-status-rpc-bound-"));
 	const socketPath = join(directory, "daemon.sock");
 	let acceptedSocket: Socket | undefined;
 	const server = createServer((socket) => {
@@ -316,7 +318,7 @@ test("pane.get RPC rejects oversized responses before parsing", async () => {
 	});
 	await new Promise<void>((resolve) => server.listen(socketPath, resolve));
 	try {
-		assert.equal(await readHerdrPaneState(socketPath, "w1:p2", 1_000), undefined);
+		assert.equal(await sendHerdrRequest(socketPath, { method: "test" }, 1_000), false);
 	} finally {
 		acceptedSocket?.destroy();
 		await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -324,143 +326,98 @@ test("pane.get RPC rejects oversized responses before parsing", async () => {
 	}
 });
 
-test("extension wires prompt and lifecycle events without prompt content", async () => {
-	type Handler = (event: any, ctx: any) => unknown;
-	const handlers = new Map<string, Handler>();
-	const reports: unknown[] = [];
-	const pi = {
-		on(name: string, handler: Handler) {
-			handlers.set(name, handler);
-		},
-		events: {
-			on() {},
-			emit(name: string, value: unknown) {
-				if (name === "herdr:blocked") reports.push(value);
-			},
-		},
-	};
-
-	piHerdrStatus(pi as any);
-	await handlers.get("session_start")?.({ reason: "startup" }, { mode: "tui", isIdle: () => true });
-	await handlers.get("ui_prompt_start")?.({ kind: "input", title: "Sensitive prompt" }, {});
-	await handlers.get("ui_prompt_end")?.({ kind: "input" }, {});
-	await new Promise((resolve) => setImmediate(resolve));
-
-	assert.deepEqual(reports, [
-		{
-			active: true,
-			label: "Waiting for user input",
-			companionOrigin: "pi-herdr-status",
-		},
-		{ active: false, companionOrigin: "pi-herdr-status" },
-	]);
-	assert.equal(JSON.stringify(reports).includes("Sensitive prompt"), false);
-});
-
-test("extension repairs a dropped settled report through the managed event surface", async () => {
+test("extension keeps Herdr working through async settlement without idle relabel flicker", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "pi-herdr-status-integration-"));
 	const socketPath = join(directory, "daemon.sock");
-	const previousEnvironment = {
+	const requests: Record<string, any>[] = [];
+	const server = createServer((socket) =>
+		respondToRequest(socket, (request) => {
+			requests.push(request);
+			return { id: request.id, result: { ok: true } };
+		}),
+	);
+	await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+	const previous = {
 		herdr: process.env.HERDR_ENV,
 		socket: process.env.HERDR_SOCKET_PATH,
 		pane: process.env.HERDR_PANE_ID,
 	};
-	let semanticState = "working";
-	let blockedCount = 0;
-	const reports: BlockedReport[] = [];
-	const lifecycleHandlers = new Map<string, (event: any, ctx: any) => unknown>();
-	const blockedHandlers: Array<(report: BlockedReport & { companionOrigin?: string }) => void> = [];
-	const server = createServer((socket) => {
-		let buffer = "";
-		socket.setEncoding("utf8");
-		socket.on("data", (chunk) => {
-			buffer += chunk;
-			const newline = buffer.indexOf("\n");
-			if (newline < 0) return;
-			const request = JSON.parse(buffer.slice(0, newline));
-			socket.end(
-				`${JSON.stringify({ id: request.id, result: { type: "pane_info", pane: { agent_status: semanticState } } })}\n`,
-			);
-		});
-	});
-	await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-
 	try {
 		process.env.HERDR_ENV = "1";
 		process.env.HERDR_SOCKET_PATH = socketPath;
 		process.env.HERDR_PANE_ID = "w1:p1";
-		blockedHandlers.push((report) => {
-			blockedCount = report.active ? blockedCount + 1 : Math.max(0, blockedCount - 1);
-			semanticState = blockedCount > 0 ? "blocked" : "done";
-			reports.push(report);
-		});
+		const lifecycle = new Map<string, (event: any, ctx: any) => unknown>();
+		const bus = new Map<string, Set<(payload: unknown) => void>>();
 		const pi = {
 			on(name: string, handler: (event: any, ctx: any) => unknown) {
-				lifecycleHandlers.set(name, handler);
+				lifecycle.set(name, handler);
 			},
 			events: {
-				on(name: string, handler: (report: BlockedReport & { companionOrigin?: string }) => void) {
-					if (name === "herdr:blocked") blockedHandlers.push(handler);
+				on(name: string, handler: (payload: unknown) => void) {
+					const handlers = bus.get(name) ?? new Set();
+					handlers.add(handler);
+					bus.set(name, handlers);
+					return () => handlers.delete(handler);
 				},
-				emit(name: string, report: BlockedReport & { companionOrigin?: string }) {
-					if (name === "herdr:blocked") for (const handler of blockedHandlers) handler(report);
+				emit(name: string, payload: unknown) {
+					for (const handler of bus.get(name) ?? []) handler(payload);
 				},
 			},
 		};
-
 		piHerdrStatus(pi as any);
-		await lifecycleHandlers.get("session_start")?.({}, { mode: "tui", isIdle: () => true });
-		await new Promise((resolve) => setTimeout(resolve, 900));
-
-		assert.equal(semanticState, "done");
-		assert.equal(blockedCount, 0);
-		assert.deepEqual(reports, [
-			{ active: true, label: "Synchronizing Herdr state", companionOrigin: "pi-herdr-status" },
-			{ active: false, companionOrigin: "pi-herdr-status" },
-		]);
-		await lifecycleHandlers.get("session_shutdown")?.({}, {});
+		await lifecycle.get("session_start")?.({ reason: "startup" }, { mode: "tui", isIdle: () => true });
+		await waitFor(() => stateRequests(requests).at(-1)?.params.state === "idle");
+		pi.events.emit("herdr:busy", { active: true, label: "⏳ 1 subagent (worker)" });
+		await lifecycle.get("agent_settled")?.({}, { isIdle: () => true });
+		await waitFor(() => stateRequests(requests).at(-1)?.params.state === "working");
+		const beforeRelabel = stateRequests(requests).length;
+		pi.events.emit("herdr:busy", { active: false });
+		pi.events.emit("herdr:busy", { active: true, label: "⏳ 1 subagent (reviewer)" });
+		await waitFor(() => stateRequests(requests).at(-1)?.params.message?.includes("reviewer"));
+		assert.deepEqual(
+			stateRequests(requests)
+				.slice(beforeRelabel)
+				.map((request) => request.params.state),
+			["working"],
+		);
+		pi.events.emit("herdr:blocked", { active: true, label: "subagent needs attention" });
+		await waitFor(() => stateRequests(requests).at(-1)?.params.state === "blocked");
+		pi.events.emit("herdr:blocked", { active: false });
+		pi.events.emit("herdr:busy", { active: false });
+		await waitFor(() => stateRequests(requests).at(-1)?.params.state === "idle");
+		await lifecycle.get("session_shutdown")?.({}, {});
 	} finally {
-		if (previousEnvironment.herdr === undefined) delete process.env.HERDR_ENV;
-		else process.env.HERDR_ENV = previousEnvironment.herdr;
-		if (previousEnvironment.socket === undefined) delete process.env.HERDR_SOCKET_PATH;
-		else process.env.HERDR_SOCKET_PATH = previousEnvironment.socket;
-		if (previousEnvironment.pane === undefined) delete process.env.HERDR_PANE_ID;
-		else process.env.HERDR_PANE_ID = previousEnvironment.pane;
+		if (previous.herdr === undefined) delete process.env.HERDR_ENV;
+		else process.env.HERDR_ENV = previous.herdr;
+		if (previous.socket === undefined) delete process.env.HERDR_SOCKET_PATH;
+		else process.env.HERDR_SOCKET_PATH = previous.socket;
+		if (previous.pane === undefined) delete process.env.HERDR_PANE_ID;
+		else process.env.HERDR_PANE_ID = previous.pane;
 		await new Promise<void>((resolve) => server.close(() => resolve()));
 		await rm(directory, { recursive: true, force: true });
 	}
 });
 
-test("overlapping native prompt preserves a foreign block count but inherits the managed single-label limit", async () => {
-	type Handler = (event: any, ctx: any) => unknown;
-	const handlers = new Map<string, Handler>();
-	let blockedCount = 1;
-	let blockedLabel = "Independent blocker";
-	const pi = {
-		on(name: string, handler: Handler) {
-			handlers.set(name, handler);
-		},
-		events: {
-			on() {},
-			emit(name: string, value: BlockedReport) {
-				if (name !== "herdr:blocked") return;
-				if (value.active) {
-					blockedCount += 1;
-					blockedLabel = value.label ?? "Waiting for user input";
-				} else {
-					blockedCount = Math.max(0, blockedCount - 1);
-					if (blockedCount === 0) blockedLabel = "";
-				}
-			},
-		},
-	};
+function respondToRequest(socket: Socket, response: (request: Record<string, any>) => unknown): void {
+	let buffer = "";
+	socket.setEncoding("utf8");
+	socket.on("data", (chunk) => {
+		buffer += chunk;
+		const newline = buffer.indexOf("\n");
+		if (newline < 0) return;
+		const request = JSON.parse(buffer.slice(0, newline));
+		socket.end(`${JSON.stringify(response(request))}\n`);
+	});
+}
 
-	piHerdrStatus(pi as any);
-	await handlers.get("session_start")?.({}, { mode: "tui" });
-	await handlers.get("ui_prompt_start")?.({ kind: "input" }, {});
-	await handlers.get("ui_prompt_end")?.({}, {});
-	await handlers.get("session_shutdown")?.({}, {});
+function stateRequests(requests: Record<string, any>[]): Record<string, any>[] {
+	return requests.filter((request) => request.method === "pane.report_agent");
+}
 
-	assert.equal(blockedCount, 1);
-	assert.equal(blockedLabel, "Waiting for user input");
-});
+async function waitFor(predicate: () => boolean, timeoutMs = 1_500): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!predicate()) {
+		if (Date.now() >= deadline) throw new Error("timed out waiting for condition");
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+}

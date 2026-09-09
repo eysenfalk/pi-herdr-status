@@ -1,9 +1,9 @@
 {
 	"name": "@eysenfalk/pi-herdr-status",
 	"version": "1.0.0-rc.0",
-	"description": "Keep Herdr's Pi status accurate through prompts and dropped lifecycle reports.",
+	"description": "A standalone Herdr Pi integration with prompt, async-subagent, and recovery-aware status.",
 	"type": "module",
-	"license": "MIT",
+	"license": "Apache-2.0",
 	"author": "Falk (https://github.com/eysenfalk)",
 	"repository": {
 		"type": "git",
@@ -30,6 +30,7 @@
 	"files": [
 		"extensions/pi-herdr-status",
 		"docs",
+		"NOTICE",
 		"media",
 		"CHANGELOG.md",
 		"LICENSE",

@@ -19,12 +19,25 @@ const readme = readFileSync(join(root, "README.md"), "utf8");
 for (const marker of [
 	"Make Herdr tell the truth about what Pi is doing.",
 	"pi install npm:@eysenfalk/pi-herdr-status",
-	"herdr integration install pi",
-	"single status authority",
+	"herdr integration uninstall pi",
+	"standalone downstream fork",
+	"herdr:busy",
 	"docs/development-workflow.md",
+	"docs/upstream.md",
 	'media="(max-width: 700px)"',
 ]) {
 	assert.ok(readme.includes(marker), `README is missing: ${marker}`);
+}
+for (const requiredFile of ["LICENSE", "NOTICE", "docs/upstream.md"]) {
+	assert.ok(existsSync(join(root, requiredFile)), `provenance file is missing: ${requiredFile}`);
+}
+const upstream = readFileSync(join(root, "docs/upstream.md"), "utf8");
+for (const marker of [
+	"b9ce14fb9970dbebcff52a620e4247b88265678a",
+	"src/integration/assets/pi/herdr-agent-state.ts",
+	"Apache-2.0",
+]) {
+	assert.ok(upstream.includes(marker), `upstream provenance is missing: ${marker}`);
 }
 for (const asset of ["demo.svg", "demo-mobile.svg", "gallery.webp", "gallery-mobile.webp"]) {
 	assert.ok(existsSync(join(root, "media", asset)), `gallery asset is missing: ${asset}`);
@@ -43,7 +56,13 @@ const captureSources = {
 	narrow: readFileSync(join(root, "tests/fixtures/real-pi-40.txt"), "utf8"),
 };
 for (const source of Object.values(captureSources)) {
-	for (const marker of ["Status demo", "Continue?", "→ Yes", "done → blocked → done"]) {
+	for (const marker of [
+		"subagent worker-luna [async]",
+		"Launched worker-luna asynchronously",
+		"worker-luna · running",
+		"worker-luna · complete",
+		"idle → working → idle",
+	]) {
 		assert.ok(source.includes(marker), `capture fixture is missing: ${marker}`);
 	}
 }
@@ -51,7 +70,13 @@ const wideDivider = "─".repeat(56);
 const narrowDivider = "─".repeat(40);
 assert.ok(captureSources.wide.includes(wideDivider) && mediaSources.wide.includes(wideDivider));
 assert.ok(captureSources.narrow.includes(narrowDivider) && mediaSources.narrow.includes(narrowDivider));
-for (const marker of [">  No</text>", "↑↓ navigate  enter select", "escape/ctrl+c cancel"]) {
+for (const marker of [
+	"subagent worker-luna [async]",
+	"Launched worker-luna asynchronously",
+	"async subagent · background",
+	"worker-luna · running",
+	"worker-luna · complete",
+]) {
 	assert.ok(mediaSources.narrow.includes(marker), `narrow redraw is missing exact fixture text: ${marker}`);
 }
 const workflow = readFileSync(join(root, "docs/development-workflow.md"), "utf8");

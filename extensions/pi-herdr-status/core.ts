@@ -1,29 +1,38 @@
+export type AgentState = "working" | "blocked" | "idle";
 export type PromptKind = "select" | "confirm" | "input" | "editor" | "custom";
 
-export interface BridgeState {
-	tuiSession: boolean;
+export interface LifecycleState {
+	rootSession: boolean;
+	agentActive: boolean;
 	promptActive: boolean;
+	promptLabel?: string;
+	blockedCount: number;
+	blockedLabel?: string;
+	busyCount: number;
+	busyLabel?: string;
 }
 
-export type BridgeEvent =
-	| { type: "session_start"; mode: unknown }
+export type LifecycleEvent =
+	| { type: "session_start"; mode: unknown; active: boolean }
+	| { type: "agent_start" }
+	| { type: "agent_settled"; idle: unknown }
 	| { type: "prompt_start"; kind?: unknown }
 	| { type: "prompt_end" }
+	| { type: "blocked"; active: unknown; label?: unknown }
+	| { type: "busy"; active: unknown; label?: unknown }
 	| { type: "session_shutdown" };
 
-export interface BlockedReport {
-	active: boolean;
-	label?: string;
+export interface StateReport {
+	state: AgentState;
+	message?: string;
 }
 
-export interface BridgeTransition {
-	state: BridgeState;
-	report?: BlockedReport;
-}
-
-export const INITIAL_BRIDGE_STATE: BridgeState = {
-	tuiSession: false,
+export const INITIAL_LIFECYCLE_STATE: LifecycleState = {
+	rootSession: false,
+	agentActive: false,
 	promptActive: false,
+	blockedCount: 0,
+	busyCount: 0,
 };
 
 const PROMPT_LABELS: Record<PromptKind, string> = {
@@ -38,31 +47,74 @@ function promptLabel(kind: unknown): string {
 	return typeof kind === "string" && kind in PROMPT_LABELS ? PROMPT_LABELS[kind as PromptKind] : "Waiting for user";
 }
 
-export function transitionBridge(state: BridgeState, event: BridgeEvent): BridgeTransition {
+export function sanitizeStatusLabel(value: unknown, maxChars = 160): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const normalized = [...value]
+		.map((character) => {
+			const codePoint = character.codePointAt(0) ?? 0;
+			return codePoint <= 31 || (codePoint >= 127 && codePoint <= 159) ? " " : character;
+		})
+		.join("")
+		.replace(/\s+/gu, " ")
+		.trim();
+	if (!normalized) return undefined;
+	return [...normalized].slice(0, maxChars).join("");
+}
+
+export function transitionLifecycle(state: LifecycleState, event: LifecycleEvent): LifecycleState {
 	switch (event.type) {
-		case "session_start": {
-			const tuiSession = event.mode === "tui";
+		case "session_start":
+			if (event.mode !== "tui") return { ...INITIAL_LIFECYCLE_STATE };
 			return {
-				state: { tuiSession, promptActive: false },
-				report: state.promptActive ? { active: false } : undefined,
+				...state,
+				rootSession: true,
+				agentActive: event.active,
+				promptActive: false,
+				promptLabel: undefined,
+			};
+		case "agent_start":
+			return state.rootSession ? { ...state, agentActive: true } : state;
+		case "agent_settled":
+			return state.rootSession && event.idle === true ? { ...state, agentActive: false } : state;
+		case "prompt_start":
+			if (!state.rootSession || state.promptActive) return state;
+			return { ...state, promptActive: true, promptLabel: promptLabel(event.kind) };
+		case "prompt_end":
+			if (!state.rootSession || !state.promptActive) return state;
+			return { ...state, promptActive: false, promptLabel: undefined };
+		case "blocked": {
+			if (event.active !== true && event.active !== false) return state;
+			const blockedCount = event.active ? state.blockedCount + 1 : Math.max(0, state.blockedCount - 1);
+			return {
+				...state,
+				blockedCount,
+				blockedLabel: event.active ? sanitizeStatusLabel(event.label) : undefined,
 			};
 		}
-		case "prompt_start":
-			if (!state.tuiSession || state.promptActive) return { state };
+		case "busy": {
+			if (event.active !== true && event.active !== false) return state;
+			const busyCount = event.active ? state.busyCount + 1 : Math.max(0, state.busyCount - 1);
 			return {
-				state: { ...state, promptActive: true },
-				report: { active: true, label: promptLabel(event.kind) },
+				...state,
+				busyCount,
+				busyLabel: event.active ? sanitizeStatusLabel(event.label) : undefined,
 			};
-		case "prompt_end":
-			if (!state.tuiSession || !state.promptActive) return { state };
-			return {
-				state: { ...state, promptActive: false },
-				report: { active: false },
-			};
+		}
 		case "session_shutdown":
-			return {
-				state: INITIAL_BRIDGE_STATE,
-				report: state.promptActive ? { active: false } : undefined,
-			};
+			return { ...INITIAL_LIFECYCLE_STATE };
 	}
+}
+
+export function desiredState(state: LifecycleState): StateReport | undefined {
+	if (!state.rootSession) return undefined;
+	if (state.promptActive || state.blockedCount > 0) {
+		return {
+			state: "blocked",
+			message: state.promptActive ? state.promptLabel : state.blockedLabel,
+		};
+	}
+	if (state.agentActive || state.busyCount > 0) {
+		return { state: "working", message: state.busyCount > 0 ? state.busyLabel : undefined };
+	}
+	return { state: "idle" };
 }

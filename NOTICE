@@ -1,0 +1,19 @@
+Pi Herdr Status
+
+This project is a standalone downstream fork of the Pi integration distributed
+with Herdr (https://github.com/herdrdev/herdr), originally licensed under the
+Apache License 2.0.
+
+Fork baseline:
+  repository: https://github.com/herdrdev/herdr
+  file: src/integration/assets/pi/herdr-agent-state.ts
+  commit: b9ce14fb9970dbebcff52a620e4247b88265678a
+  integration marker: HERDR_INTEGRATION_VERSION=8
+
+The downstream fork has been substantially modified to add native Pi prompt
+lifecycle handling, counted async-work leases through `herdr:busy`, reliable
+acknowledgement-aware delivery, and periodic state heartbeat recovery.
+
+Herdr and Pi are independent projects. This community fork is not affiliated
+with or endorsed by either project. Herdr names and marks remain the property
+of their respective owners.

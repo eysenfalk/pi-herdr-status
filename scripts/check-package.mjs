@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
 assert.equal(manifest.name, "@eysenfalk/pi-herdr-status");
-assert.equal(manifest.license, "MIT");
+assert.equal(manifest.license, "Apache-2.0");
 assert.ok(manifest.keywords.includes("pi-package"), "package must remain discoverable in the Pi gallery");
 assert.ok(manifest.keywords.includes("herdr"), "package must remain discoverable for Herdr users");
 assert.deepEqual(manifest.pi.extensions, ["./extensions/pi-herdr-status/index.ts"]);
@@ -22,16 +22,21 @@ const runtimeFiles = ["core.ts", "herdr-rpc.ts", "index.ts", "recovery.ts"];
 const runtimeSource = runtimeFiles
 	.map((file) => readFileSync(join(root, "extensions/pi-herdr-status", file), "utf8"))
 	.join("\n");
-const directLifecycleReport = /pane\.report[_-]agent|pane\.report[_-]agent_session|session\.report/u;
-for (const forbiddenName of ["pane.report_agent", "pane.report_agent_session", "pane.report-agent", "session.report"]) {
-	assert.match(forbiddenName, directLifecycleReport, `lifecycle method detector missed ${forbiddenName}`);
+for (const required of [
+	'const SOURCE = "herdr:pi"',
+	'"pane.report_agent"',
+	'"pane.report_agent_session"',
+	'pi.events.on("herdr:busy"',
+	'pi.events.on("herdr:blocked"',
+]) {
+	assert.ok(runtimeSource.includes(required), `single-authority runtime is missing: ${required}`);
 }
 for (const [label, pattern] of [
 	["internet fetch", /\bfetch\s*\(/u],
 	["HTTP client", /node:https?|\bWebSocket\b/u],
 	["child process", /node:child_process/u],
 	["model message injection", /\bsendMessage\s*\(/u],
-	["direct Herdr lifecycle report", directLifecycleReport],
+	["pane content read", /pane\.get/u],
 ]) {
 	assert.doesNotMatch(runtimeSource, pattern, `runtime source must not contain ${label}`);
 }
@@ -65,6 +70,7 @@ const expectedPaths = [
 	"package.json",
 	"README.md",
 	"LICENSE",
+	"NOTICE",
 	"CHANGELOG.md",
 	"SECURITY.md",
 	"extensions/pi-herdr-status/index.ts",
@@ -76,6 +82,7 @@ const expectedPaths = [
 	"docs/development-workflow.md",
 	"docs/privacy-security.md",
 	"docs/troubleshooting.md",
+	"docs/upstream.md",
 	"media/demo.svg",
 	"media/demo-mobile.svg",
 	"media/gallery.webp",

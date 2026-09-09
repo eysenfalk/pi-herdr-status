@@ -5,10 +5,11 @@ Releases are maintainer-only and follow Semantic Versioning.
 ## Prepare
 
 1. Update `CHANGELOG.md` and `package.json` in a reviewed pull request.
-2. Run `npm ci --ignore-scripts`, `npm run check`, `npm run smoke:packed`, and the real Herdr/Pi TUI release journey.
-3. Inspect `npm pack --dry-run --json` and the extracted tarball.
-4. Confirm the version is absent from npm.
-5. Obtain independent correctness/security and documentation/release review.
+2. Compare the current upstream Herdr integration with the pinned baseline in `docs/upstream.md`; update provenance when needed.
+3. Run `npm ci --ignore-scripts`, `npm run check`, `npm run smoke:packed`, and the real Herdr/Pi parent/async/prompt journey with the bundled integration absent.
+4. Inspect `npm pack --dry-run --json` and the extracted tarball, including `LICENSE`, `NOTICE`, and `docs/upstream.md`.
+5. Confirm the version is absent from npm.
+6. Obtain independent correctness/security and documentation/provenance/release review.
 
 ## Release-candidate tag
 

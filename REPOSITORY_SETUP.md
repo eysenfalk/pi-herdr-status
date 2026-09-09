@@ -4,8 +4,8 @@ Controls that cannot be enforced from source are recorded here for auditability.
 
 ## GitHub — deferred pending explicit owner approval
 
-- [ ] Create public repository `eysenfalk/pi-herdr-status` with description: `Keep Herdr's Pi status accurate through prompts and dropped lifecycle reports.`
-- [ ] Add topics: `pi-package`, `pi-coding-agent`, `herdr`, `terminal`, `tui`, `lifecycle`, `status`, `typescript`.
+- [ ] Create public repository `eysenfalk/pi-herdr-status` with description: `Standalone Herdr Pi integration with prompt, async-subagent, and recovery-aware status.`
+- [ ] Add topics: `pi-package`, `pi-coding-agent`, `herdr`, `subagents`, `terminal`, `tui`, `lifecycle`, `status`, `typescript`.
 - [ ] Enable Issues and Discussions; disable Wiki; enable automatic branch deletion.
 - [ ] Enable private vulnerability reporting.
 - [ ] Enable Dependabot alerts/security updates, secret scanning, and push protection.

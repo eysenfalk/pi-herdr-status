@@ -2,59 +2,106 @@
 
 ## Scope
 
-Evaluate `@eysenfalk/pi-herdr-status@1.0.0-rc.0` as a standalone Pi package without changing Herdr's managed Pi integration, the active Pi harness, GitHub, npm, or any public channel.
+Evaluate `@eysenfalk/pi-herdr-status@1.0.0-rc.0` as a standalone downstream fork of Herdr's bundled Pi integration. GitHub creation, npm publication, active-harness installation, and external announcement remain disabled.
 
-## Unchanged baseline
+## Compared designs
 
-Herdr's official Pi integration remains installed and owns semantic lifecycle state. Without this companion, native Pi blocking UI is only partially visible to Herdr and there is no companion-side read-only reconciliation for a dropped lifecycle update.
+### Herdr 0.9.0 bundled integration
 
-## Candidate
+The unchanged upstream v8 hook is the semantic lifecycle authority and correctly handles parent `agent_start` / settled state plus `herdr:blocked`. It does not consume `herdr:busy`, native prompt events, or periodically reassert delivered state. A settled parent therefore becomes idle while async pi-subagents work remains active.
 
-The package adds only:
+### Retired companion design
 
-- fixed-label native prompt bridging through the managed `herdr:blocked` event;
-- expected-state tracking aligned with Pi's lifecycle and `ctx.isIdle()`;
-- read-only `pane.get` reconciliation over Herdr's local socket;
-- mismatch-only balanced recovery, bounded retry, cancellation, and foreign-blocker protection.
+The previous candidate kept the bundled hook installed, bridged native prompts through `herdr:blocked`, and used read-only `pane.get` reconciliation plus balanced pulses for dropped terminal reports. It preserved upstream authority but could not make async work semantically `working`: the official reducer had no busy input, so every pulse recomputed idle.
 
-It never modifies the managed file or sends a direct lifecycle report.
+### Standalone fork candidate
 
-## Correctness evidence
+The fork removes that reachability limit while retaining one source/sequence owner. Its reducer is:
 
-- 18 focused Node tests pass.
-- Coverage includes pure prompt transitions, headless exclusion, shutdown cleanup, duplicate events, balanced blocker counts, lifecycle expectation, bounded retry, stale-read cancellation, one-read enforcement, foreign blockers, Windows endpoint normalization, exact `pane.get` extraction, oversized-response rejection, prompt-content exclusion, and a socket-backed dropped-settlement recovery through a managed-like event listener.
-- The socket-backed integration test starts with observed `working` while Pi is settled and verifies the exact balanced pulse restores `done` with blocker count zero.
-- `npm run check` passes lint, strict TypeScript, tests, documentation links/contracts, immutable workflow pins, and package allowlist checks.
-- `npm run smoke:packed` packs the exact npm artifact, installs it in a fresh temporary Pi home, and loads it with the installed Pi bundle offline without credentials, sessions, context files, skills, prompts, or provider calls.
-- The exact tarball contains 18 explicitly allowlisted files, has no runtime dependency, is 110,911 bytes unpacked, and has SHA-256 `155714ec326ef9f50d23e8f1ae027be8681217d1e4c36d88b6733b18f382a9a2`.
-- A real Herdr 0.9.0 pane loaded Pi 0.85.1 with only the managed integration, candidate, and bounded prompt driver. Herdr independently observed `done → blocked → done`; `screen_detection_skipped=true` confirmed the managed lifecycle authority remained active. The sanitized commands, timeline, scope, and cleanup record are retained in [`tests/fixtures/validation-2026-09-09.md`](tests/fixtures/validation-2026-09-09.md).
-- Fresh real Pi TUI sessions were inspected at 120×40 and 40×40. The native confirmation remained legible at both widths.
-- Responsive gallery media are labeled faithful cropped redraws. They show only the content-free test prompt and observed status sequence; private prompts, paths, model identity, footer, and unrelated startup output are absent.
+```text
+blocked > (parentActive || busyCount > 0) > idle
+```
 
-## Security and privacy evidence
+It directly handles native prompts and sibling busy/block leases, serializes session/state reports, validates acknowledgements, retries failures, supersedes stale writes, and republishes authoritative state every 30 seconds. The bundled integration must be absent.
 
-- Runtime package checks forbid internet clients, subprocesses, model-message injection, direct Herdr lifecycle reporting, install hooks, runtime dependencies, and access to common prompt-content fields.
-- Runtime uses `node:net` only for the local endpoint supplied by Herdr. It parses the current pane's `pane.get` response locally, returns and uses only `agent_status`, and neither retains nor emits other fields.
-- CI defaults to read-only permissions; actions are pinned to full commit SHAs.
-- CodeQL and protected OIDC npm publishing workflows are prepared but cannot be verified until a public repository exists.
+## Provenance
+
+- Upstream repository: `https://github.com/herdrdev/herdr`
+- Upstream path: `src/integration/assets/pi/herdr-agent-state.ts`
+- Baseline commit: `b9ce14fb9970dbebcff52a620e4247b88265678a`
+- Baseline marker: `HERDR_INTEGRATION_VERSION=8`
+- License: Apache-2.0
+
+Exact provenance and refresh procedure are distributed in `NOTICE` and `docs/upstream.md`.
+
+## Deterministic evidence
+
+- 19 focused tests pass.
+- Strict TypeScript, Biome, documentation, workflow, and package-allowlist checks pass.
+- Coverage includes parent lifecycle, accepted settlement, one and multiple busy/block leases, ambiguous-label clearing, both reload event orders, prompt/block precedence, fixed prompt labels, malformed/headless exclusion, label sanitization, session-before-state ordering, session-switch races, sequence monotonicity, failure retry/backoff, stale-send cancellation, shutdown cancellation, heartbeat, RPC acknowledgement/error/size handling, and socket-backed async settlement/relabel behavior.
+- Exact packed-artifact Pi smoke passed offline in a fresh temporary home.
+
+## Real target-environment evidence
+
+With Herdr 0.9.0, Pi 0.85.1, and pi-subagents 0.66.0, disposable workspaces loaded the exact packed artifact as the only `herdr:pi` authority. Independent `herdr agent get` observations verified:
+
+- startup `idle` with `screen_detection_skipped=true`;
+- real async success and failure terminal paths stay `working` after the parent settles, then return idle;
+- a real two-child workflow remains `working` until both lanes reach terminal state;
+- a real child `contact_supervisor` request produces `working → blocked → working → done`;
+- forward and reversed extension registration orders, including reload during active async work;
+- real async + native prompt precedence: `working → blocked → working → done`;
+- native prompt `idle → blocked → done`;
+- Escape abort `done → working → done`;
+- a relay-observed heartbeat `pane.report_agent` 29,884 ms after the initial settled report, without flicker;
+- real Herdr socket outage followed by bounded retry after reconnect: stale `idle → working → done`.
+
+The sanitized record is `tests/fixtures/validation-2026-09-09.md`. All disposable workspaces, raw captures, relays, and child runs were terminated or removed.
+
+## Reviewed artifact
+
+```text
+filename: eysenfalk-pi-herdr-status-1.0.0-rc.0.tgz
+files: 20 explicitly allowlisted
+unpacked bytes: 149158
+sha256: 3cf5296efae8bf058df536070d1033691ad087a13187373808bada44c08cb348
+```
+
+The validation record and this evaluation are intentionally excluded from the npm artifact, so recording the hash does not create a self-referential package.
+
+## Review findings and corrections
+
+The first three-lane independent review blocked the candidate on two runtime defects and stale evidence:
+
+1. a session change could race an in-flight state report;
+2. anonymous partial releases could retain a stale owner label;
+3. install/rollback instructions could create a no-authority or dual-authority window;
+4. the retained evidence still described the retired companion.
+
+The implementation now aborts stale state sends on session changes and republishes after the new session report; partial releases preserve counts but clear ambiguous labels; install/rollback stages and verifies one authority before reload; and all retained evidence was regenerated for the fork. Regression tests cover both runtime findings.
+
+Three independent lanes now approve the release candidate with no remaining findings: runtime/code, documentation/provenance, and retained real-environment evidence. Focused closure reviews confirmed the staged compatibility handoff plus real overlap, attention, and observable-heartbeat evidence.
 
 ## Cost and complexity
 
-- Four small runtime files.
-- One local `pane.get` request after lifecycle transitions and every 30 seconds; only the returned semantic status is used.
-- At most one unreferenced timer and one abortable socket read.
-- Failure delays: 0.75, 1.5, 3, 6, then 30 seconds.
-- Zero runtime dependencies, persistence, analytics, internet requests, subprocesses, or model calls.
+- Four runtime files and zero runtime dependencies.
+- One local state write per lifecycle change plus one every 30 seconds.
+- At most one active request, one retry timer, and one heartbeat timer.
+- No pane reads, subprocesses, persistence, internet access, analytics, or model calls.
+
+## Rollback
+
+Remove the exact Pi package source and verify it is absent, then run `herdr integration install pi` and reload or restart Pi. Never load both integrations concurrently.
 
 ## Residual limits
 
-- A stale `blocked` state is preserved because it may belong to another producer.
-- A foreign blocker suppresses recovery writes until released.
-- Overlapping blockers preserve the anonymous count but can temporarily share the last emitted label.
-- Permanent daemon unavailability and genuinely hung active work cannot be repaired.
-- Linux is the only complete platform journey; Windows pipe normalization is unit-tested, while full Windows and macOS journeys remain open compatibility work.
-- Public CI, CodeQL, branch protection, social preview, npm provenance, Pi gallery rendering, and clean npm install remain unverified until separately approved publication steps occur.
+- Anonymous busy/block deltas cannot recover a producer that disappears without release; reload or process exit is required.
+- On an ambiguous partial release the count remains authoritative but the owner label is cleared.
+- A hard-killed Pi process cannot emit retry or heartbeat traffic.
+- Runtime cannot prevent a user from manually co-installing two `herdr:pi` authorities; installation safety is procedural and documented.
+- Windows pipe normalization is unit-tested; complete Windows and macOS journeys remain unverified.
+- Public CI, branch protection, CodeQL, provenance publishing, clean remote installation, and rollback remain gated on repository creation.
 
 ## Decision
 
-The local package candidate is suitable for independent final review. Repository creation, package publication, active-harness promotion, and external announcement remain disabled until explicit owner decisions.
+The implementation, local validation, and independent review gates pass. Promotion remains disabled until the owner explicitly approves; repository creation, active installation, and npm publication are separate gates.

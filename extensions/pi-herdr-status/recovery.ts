@@ -1,38 +1,36 @@
-export type ExpectedHerdrState = "working" | "blocked" | "settled";
+import type { StateReport } from "./core.ts";
 
-export interface BlockedReport {
-	active: boolean;
-	label?: string;
+export interface SessionRef {
+	agent_session_path?: string;
+	agent_session_id?: string;
 }
 
-export interface RecoverySnapshot {
-	enabled: boolean;
-	agentActive: boolean;
-	promptActive: boolean;
-	externalBlockers: number;
-	expected?: ExpectedHerdrState;
-	observed?: string;
+export interface ReporterSnapshot {
+	disposed: boolean;
+	sessionDirty: boolean;
+	stateDirty: boolean;
 	consecutiveFailures: number;
-	recoveryPulses: number;
+	currentKind?: "session" | "state";
 }
 
-export interface RecoveryDependencies {
-	readObservedState: (signal: AbortSignal) => Promise<string | undefined>;
-	emitBlocked: (report: BlockedReport) => void;
+export interface ReporterDependencies {
+	paneId: string;
+	source?: string;
+	send: (request: Record<string, unknown>, timeoutMs: number, signal: AbortSignal) => Promise<boolean>;
 	schedule?: (callback: () => void, delayMs: number) => () => void;
-	initialDelayMs?: number;
-	heartbeatMs?: number;
+	intervals?: {
+		setInterval: typeof setInterval;
+		clearInterval: typeof clearInterval;
+	};
 	retryDelaysMs?: readonly number[];
 }
 
 const DEFAULT_RETRY_DELAYS = [750, 1_500, 3_000, 6_000, 30_000] as const;
+let reportSeq = Date.now() * 1000;
 
-export function activeAtSessionStart(idle: unknown): boolean {
-	return idle === false;
-}
-
-export function shouldAcceptSettled(idle: unknown): boolean {
-	return idle === true;
+function nextReportSeq(): number {
+	reportSeq = Math.max(reportSeq + 1, Date.now() * 1000);
+	return reportSeq;
 }
 
 function defaultSchedule(callback: () => void, delayMs: number): () => void {
@@ -41,172 +39,173 @@ function defaultSchedule(callback: () => void, delayMs: number): () => void {
 	return () => clearTimeout(timer);
 }
 
-function observedMatches(expected: ExpectedHerdrState, observed: string | undefined): boolean {
-	if (observed === "blocked" && expected !== "blocked") return true;
-	if (expected === "settled") return observed === "idle" || observed === "done";
-	return observed === expected;
-}
-
-export class LifecycleRecovery {
-	private readonly readObservedState: (signal: AbortSignal) => Promise<string | undefined>;
-	private readonly emitBlocked: (report: BlockedReport) => void;
-	private readonly scheduleCallback: (callback: () => void, delayMs: number) => () => void;
-	private readonly initialDelayMs: number;
-	private readonly heartbeatMs: number;
+export class ReliableHerdrReporter {
+	private readonly paneId: string;
+	private readonly source: string;
+	private readonly send: ReporterDependencies["send"];
+	private readonly schedule: NonNullable<ReporterDependencies["schedule"]>;
+	private readonly intervals: NonNullable<ReporterDependencies["intervals"]>;
 	private readonly retryDelaysMs: readonly number[];
-	private cancelTimer?: () => void;
-	private activeRead?: AbortController;
-	private generation = 0;
-	private enabled = false;
-	private agentActive = false;
-	private promptActive = false;
-	private promptLabel = "Waiting for user";
-	private externalBlockers = 0;
-	private observed?: string;
+	private sessionRef: SessionRef = {};
+	private sessionStartSource?: string;
+	private desired?: StateReport;
+	private sessionRevision = 0;
+	private stateRevision = 0;
+	private sessionDirty = false;
+	private stateDirty = false;
+	private draining = false;
+	private drainPromise = Promise.resolve();
+	private activeAbort?: AbortController;
+	private currentKind?: "session" | "state";
+	private cancelRetry?: () => void;
+	private heartbeat?: ReturnType<typeof setInterval>;
 	private consecutiveFailures = 0;
-	private recoveryPulses = 0;
+	private disposed = false;
 
-	constructor(dependencies: RecoveryDependencies) {
-		this.readObservedState = dependencies.readObservedState;
-		this.emitBlocked = dependencies.emitBlocked;
-		this.scheduleCallback = dependencies.schedule ?? defaultSchedule;
-		this.initialDelayMs = dependencies.initialDelayMs ?? 750;
-		this.heartbeatMs = dependencies.heartbeatMs ?? 30_000;
+	constructor(dependencies: ReporterDependencies) {
+		this.paneId = dependencies.paneId;
+		this.source = dependencies.source ?? "herdr:pi";
+		this.send = dependencies.send;
+		this.schedule = dependencies.schedule ?? defaultSchedule;
+		this.intervals = dependencies.intervals ?? { setInterval, clearInterval };
 		this.retryDelaysMs = dependencies.retryDelaysMs ?? DEFAULT_RETRY_DELAYS;
 	}
 
-	start(mode: unknown, agentActive = false): void {
-		this.cancelPending();
-		const wasEnabled = this.enabled;
-		this.enabled = mode === "tui";
-		this.agentActive = agentActive;
-		this.promptActive = false;
-		if (!wasEnabled || !this.enabled) this.externalBlockers = 0;
-		this.observed = undefined;
-		this.consecutiveFailures = 0;
-		this.generation += 1;
-		if (!this.enabled) return;
-		this.scheduleCheck(this.initialDelayMs, this.generation);
+	queueSession(sessionRef: SessionRef, sessionStartSource?: string): void {
+		if (this.disposed) return;
+		const changed =
+			this.sessionRef.agent_session_path !== sessionRef.agent_session_path ||
+			this.sessionRef.agent_session_id !== sessionRef.agent_session_id ||
+			this.sessionStartSource !== sessionStartSource;
+		if (!changed && !this.sessionDirty) return;
+		this.sessionRef = { ...sessionRef };
+		this.sessionStartSource = sessionStartSource;
+		this.sessionRevision += 1;
+		this.sessionDirty = true;
+		if (changed && this.desired) {
+			this.stateRevision += 1;
+			this.stateDirty = true;
+		}
+		this.activeAbort?.abort();
+		this.kick();
 	}
 
-	agentStarted(): void {
-		if (!this.enabled) return;
-		this.agentActive = true;
-		this.changed();
+	queueState(report: StateReport, force = false): void {
+		if (this.disposed) return;
+		const changed = this.desired?.state !== report.state || this.desired?.message !== report.message;
+		if (!changed && (!force || this.stateDirty || this.currentKind === "state")) return;
+		this.desired = { ...report };
+		this.stateRevision += 1;
+		this.stateDirty = true;
+		if (changed && this.currentKind === "state") this.activeAbort?.abort();
+		this.kick();
 	}
 
-	agentSettled(): void {
-		if (!this.enabled) return;
-		this.agentActive = false;
-		this.changed();
+	startHeartbeat(getReport: () => StateReport | undefined, intervalMs = 30_000): void {
+		if (this.disposed || intervalMs <= 0 || this.heartbeat) return;
+		this.heartbeat = this.intervals.setInterval(() => {
+			const report = getReport();
+			if (report) this.queueState(report, true);
+		}, intervalMs);
+		this.heartbeat.unref?.();
 	}
 
-	promptStarted(label: string): void {
-		if (!this.enabled || this.promptActive) return;
-		this.promptActive = true;
-		this.promptLabel = label;
-		this.changed();
+	async flush(): Promise<void> {
+		while (this.draining) await this.drainPromise;
 	}
 
-	promptEnded(): void {
-		if (!this.enabled || !this.promptActive) return;
-		this.promptActive = false;
-		this.changed();
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.cancelRetry?.();
+		this.cancelRetry = undefined;
+		if (this.heartbeat) this.intervals.clearInterval(this.heartbeat);
+		this.heartbeat = undefined;
+		this.activeAbort?.abort();
+		this.activeAbort = undefined;
+		this.sessionDirty = false;
+		this.stateDirty = false;
 	}
 
-	externalBlockedChanged(active: boolean): void {
-		if (!this.enabled) return;
-		const next = active ? this.externalBlockers + 1 : Math.max(0, this.externalBlockers - 1);
-		if (next === this.externalBlockers) return;
-		this.externalBlockers = next;
-		this.changed();
-	}
-
-	stop(): void {
-		this.cancelPending();
-		this.enabled = false;
-		this.agentActive = false;
-		this.promptActive = false;
-		this.externalBlockers = 0;
-		this.observed = undefined;
-		this.consecutiveFailures = 0;
-		this.generation += 1;
-	}
-
-	snapshot(): RecoverySnapshot {
+	snapshot(): ReporterSnapshot {
 		return {
-			enabled: this.enabled,
-			agentActive: this.agentActive,
-			promptActive: this.promptActive,
-			externalBlockers: this.externalBlockers,
-			expected: this.enabled ? this.expectedState() : undefined,
-			observed: this.observed,
+			disposed: this.disposed,
+			sessionDirty: this.sessionDirty,
+			stateDirty: this.stateDirty,
 			consecutiveFailures: this.consecutiveFailures,
-			recoveryPulses: this.recoveryPulses,
+			currentKind: this.currentKind,
 		};
 	}
 
-	private changed(): void {
-		this.cancelPending();
-		this.consecutiveFailures = 0;
-		this.generation += 1;
-		this.scheduleCheck(this.initialDelayMs, this.generation);
+	private kick(): void {
+		if (this.disposed || this.draining) return;
+		this.cancelRetry?.();
+		this.cancelRetry = undefined;
+		this.draining = true;
+		this.drainPromise = this.drain().finally(() => {
+			this.draining = false;
+			this.currentKind = undefined;
+			this.activeAbort = undefined;
+			if (!this.disposed && (this.sessionDirty || this.stateDirty) && !this.cancelRetry) this.kick();
+		});
 	}
 
-	private expectedState(): ExpectedHerdrState {
-		if (this.promptActive) return "blocked";
-		return this.agentActive ? "working" : "settled";
-	}
-
-	private emitBalancedPulse(expected: ExpectedHerdrState): void {
-		this.recoveryPulses += 1;
-		if (expected === "blocked") {
-			this.emitBlocked({ active: false });
-			this.emitBlocked({ active: true, label: this.promptLabel });
+	private async drain(): Promise<void> {
+		while (!this.disposed && (this.sessionDirty || this.stateDirty)) {
+			const kind = this.sessionDirty ? "session" : "state";
+			const revision = kind === "session" ? this.sessionRevision : this.stateRevision;
+			this.currentKind = kind;
+			const controller = new AbortController();
+			this.activeAbort = controller;
+			const request = kind === "session" ? this.sessionRequest() : this.stateRequest();
+			let delivered = await this.send(request, 500, controller.signal);
+			if (!delivered && !controller.signal.aborted && !this.disposed) {
+				delivered = await this.send(request, 1_500, controller.signal);
+			}
+			if (controller.signal.aborted || this.disposed) continue;
+			if (delivered) {
+				this.consecutiveFailures = 0;
+				if (kind === "session" && revision === this.sessionRevision) this.sessionDirty = false;
+				if (kind === "state" && revision === this.stateRevision) this.stateDirty = false;
+				continue;
+			}
+			this.consecutiveFailures += 1;
+			const retryIndex = Math.min(this.consecutiveFailures - 1, this.retryDelaysMs.length - 1);
+			const delay = this.retryDelaysMs[retryIndex] ?? 30_000;
+			this.cancelRetry = this.schedule(() => {
+				this.cancelRetry = undefined;
+				this.kick();
+			}, delay);
 			return;
 		}
-		this.emitBlocked({ active: true, label: "Synchronizing Herdr state" });
-		this.emitBlocked({ active: false });
 	}
 
-	private cancelPending(): void {
-		this.cancelTimer?.();
-		this.cancelTimer = undefined;
-		this.activeRead?.abort();
-		this.activeRead = undefined;
+	private sessionRequest(): Record<string, unknown> {
+		return {
+			method: "pane.report_agent_session",
+			params: {
+				pane_id: this.paneId,
+				source: this.source,
+				agent: "pi",
+				seq: nextReportSeq(),
+				session_start_source: this.sessionStartSource,
+				...this.sessionRef,
+			},
+		};
 	}
 
-	private scheduleCheck(delayMs: number, generation: number): void {
-		this.cancelPending();
-		this.cancelTimer = this.scheduleCallback(() => {
-			this.cancelTimer = undefined;
-			void this.reconcile(generation);
-		}, delayMs);
-	}
-
-	private async reconcile(generation: number): Promise<void> {
-		if (!this.enabled || generation !== this.generation) return;
-		const controller = new AbortController();
-		this.activeRead = controller;
-		let observed: string | undefined;
-		try {
-			observed = await this.readObservedState(controller.signal);
-		} catch {
-			observed = undefined;
-		}
-		if (this.activeRead === controller) this.activeRead = undefined;
-		if (!this.enabled || generation !== this.generation || controller.signal.aborted) return;
-		this.observed = observed;
-		const expected = this.expectedState();
-		if (this.externalBlockers > 0 || observedMatches(expected, observed)) {
-			this.consecutiveFailures = 0;
-			this.scheduleCheck(this.heartbeatMs, generation);
-			return;
-		}
-		if (observed !== undefined) this.emitBalancedPulse(expected);
-		this.consecutiveFailures += 1;
-		const retryIndex = Math.min(this.consecutiveFailures - 1, this.retryDelaysMs.length - 1);
-		const delay = this.retryDelaysMs[retryIndex] ?? this.heartbeatMs;
-		this.scheduleCheck(delay, generation);
+	private stateRequest(): Record<string, unknown> {
+		return {
+			method: "pane.report_agent",
+			params: {
+				pane_id: this.paneId,
+				source: this.source,
+				agent: "pi",
+				state: this.desired?.state,
+				message: this.desired?.message,
+				seq: nextReportSeq(),
+				...this.sessionRef,
+			},
+		};
 	}
 }

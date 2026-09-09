@@ -2,22 +2,23 @@
 
 ## Data flow
 
-The runtime reads Pi lifecycle event names and prompt kinds. During Herdr-managed TUI sessions it requests and parses the current pane's `pane.get` response from Herdr's local socket, then returns and uses only its semantic `agent_status` field. Other response fields are neither retained nor emitted.
+The runtime reads Pi lifecycle event names, `ctx.isIdle()`, session identity, prompt kinds, and sibling `herdr:busy` / `herdr:blocked` payloads. It sends local lifecycle and session reports to the endpoint supplied in `HERDR_SOCKET_PATH`.
 
 It does **not** inspect, use, retain, or emit:
 
-- prompt titles, values, or editor contents;
+- prompt titles, values, editor contents, or user answers;
 - user messages or assistant responses;
-- session transcripts;
+- session transcript contents;
 - tool names, arguments, or results;
-- filesystem contents or path fields that may accompany the parsed response;
 - model credentials or provider settings.
 
-Fixed status labels such as `Waiting for user confirmation` are emitted locally through Pi's shared event bus.
+Pi's session path or ID is sent locally to Herdr because session linking is part of the upstream integration contract. Busy and blocker labels from trusted sibling extensions are normalized, stripped of control characters, and bounded to 160 Unicode characters before local reporting. Native prompts use fixed labels selected only by prompt kind.
 
 ## Network posture
 
-There are no internet requests, analytics, update checks, or model calls. `node:net` connects only to the endpoint supplied by Herdr through `HERDR_SOCKET_PATH`; on Windows this becomes the corresponding local named pipe. Each read has a one-second timeout and a 64 KiB response limit, is abortable, and fails closed.
+There are no internet requests, analytics, update checks, or model calls. `node:net` connects only to `HERDR_SOCKET_PATH`; on Windows this becomes the corresponding local named pipe. Each response is limited to 64 KiB, must match the request ID, must contain no RPC error, and is discarded after acknowledgement. Requests time out, are abortable, and retry with bounded backoff.
+
+A 30-second heartbeat writes the current authoritative status. It does not read pane output or call `pane.get`.
 
 ## Supply chain
 
@@ -25,12 +26,13 @@ There are no internet requests, analytics, update checks, or model calls. `node:
 - No install, post-install, or prepare scripts.
 - CI actions are pinned to full commit SHAs.
 - Release automation uses npm Trusted Publishing with provenance through a protected GitHub environment.
-- The packed artifact is allowlist-checked and loaded in a temporary, offline Pi home before release.
+- The packed artifact is allowlist-checked and loaded in a temporary offline Pi home before release.
+- Upstream origin, exact baseline commit, modification summary, and Apache-2.0 license are distributed with the package.
 
 ## Local authority
 
-Pi extensions execute with the permissions of the Pi process. Herdr controls the socket location and pane identity through environment variables. Review the source and package provenance before installation.
+Pi extensions execute with the Pi process's permissions. Herdr controls socket location and pane identity through environment variables. This fork deliberately owns source `herdr:pi`, so loading Herdr's bundled integration at the same time is unsupported and can produce conflicting sequences.
 
 ## Threat boundary
 
-This package does not authenticate the local Herdr socket independently. It relies on Herdr's process and filesystem controls. A malicious process that can replace that socket or alter Pi's environment is already inside the local process-level trust boundary.
+The package does not independently authenticate the local Herdr socket or trusted in-process event producers. A process that can replace that socket, alter Pi's environment, or execute another Pi extension is already inside the local process trust boundary.
