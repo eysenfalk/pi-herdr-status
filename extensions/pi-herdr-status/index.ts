@@ -1,6 +1,6 @@
 // Standalone downstream fork of Herdr's Pi integration.
 // Derived from herdrdev/herdr src/integration/assets/pi/herdr-agent-state.ts
-// at b9ce14fb9970dbebcff52a620e4247b88265678a; substantially modified.
+// at v0.9.0 (b99002ac99b09e00b4ca692436cb15a6b0d676f1); substantially modified.
 // HERDR_INTEGRATION_ID=pi
 // HERDR_INTEGRATION_VERSION=8-fork.1
 

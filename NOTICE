@@ -6,13 +6,16 @@ Apache License 2.0.
 
 Fork baseline:
   repository: https://github.com/herdrdev/herdr
+  release tag: v0.9.0
+  commit: b99002ac99b09e00b4ca692436cb15a6b0d676f1
   file: src/integration/assets/pi/herdr-agent-state.ts
-  commit: b9ce14fb9970dbebcff52a620e4247b88265678a
   integration marker: HERDR_INTEGRATION_VERSION=8
 
-The downstream fork has been substantially modified to add native Pi prompt
-lifecycle handling, counted async-work leases through `herdr:busy`, reliable
-acknowledgement-aware delivery, and periodic state heartbeat recovery.
+The upstream integration's behavior is split across four downstream runtime
+files, each carrying a prominent derivation and modification notice. The fork
+adds native Pi prompt lifecycle handling, counted async-work leases through
+`herdr:busy`, reliable acknowledgement-aware delivery, and periodic state
+heartbeat recovery.
 
 Herdr and Pi are independent projects. This community fork is not affiliated
 with or endorsed by either project. Herdr names and marks remain the property

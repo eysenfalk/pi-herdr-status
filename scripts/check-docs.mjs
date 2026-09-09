@@ -32,12 +32,14 @@ for (const requiredFile of ["LICENSE", "NOTICE", "docs/upstream.md"]) {
 	assert.ok(existsSync(join(root, requiredFile)), `provenance file is missing: ${requiredFile}`);
 }
 const upstream = readFileSync(join(root, "docs/upstream.md"), "utf8");
-for (const marker of [
-	"b9ce14fb9970dbebcff52a620e4247b88265678a",
-	"src/integration/assets/pi/herdr-agent-state.ts",
-	"Apache-2.0",
-]) {
+const upstreamCommit = "b99002ac99b09e00b4ca692436cb15a6b0d676f1";
+for (const marker of ["v0.9.0", upstreamCommit, "src/integration/assets/pi/herdr-agent-state.ts", "Apache-2.0"]) {
 	assert.ok(upstream.includes(marker), `upstream provenance is missing: ${marker}`);
+}
+for (const runtimeFile of ["core.ts", "herdr-rpc.ts", "index.ts", "recovery.ts"]) {
+	const source = readFileSync(join(root, "extensions", "pi-herdr-status", runtimeFile), "utf8");
+	assert.ok(source.includes(upstreamCommit), `${runtimeFile} is missing the upstream baseline`);
+	assert.ok(source.includes("substantially modified"), `${runtimeFile} is missing its modification notice`);
 }
 for (const asset of ["demo.svg", "demo-mobile.svg", "gallery.webp", "gallery-mobile.webp"]) {
 	assert.ok(existsSync(join(root, "media", asset)), `gallery asset is missing: ${asset}`);

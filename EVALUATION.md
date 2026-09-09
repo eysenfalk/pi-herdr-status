@@ -28,11 +28,12 @@ It directly handles native prompts and sibling busy/block leases, serializes ses
 
 - Upstream repository: `https://github.com/herdrdev/herdr`
 - Upstream path: `src/integration/assets/pi/herdr-agent-state.ts`
-- Baseline commit: `b9ce14fb9970dbebcff52a620e4247b88265678a`
+- Baseline release: `v0.9.0`
+- Baseline commit: `b99002ac99b09e00b4ca692436cb15a6b0d676f1`
 - Baseline marker: `HERDR_INTEGRATION_VERSION=8`
 - License: Apache-2.0
 
-Exact provenance and refresh procedure are distributed in `NOTICE` and `docs/upstream.md`.
+The upstream integration's behavior is split across four downstream runtime files; each carries the exact baseline and a prominent substantial-modification notice. Exact provenance and the refresh procedure are distributed in `NOTICE` and `docs/upstream.md`.
 
 ## Deterministic evidence
 
@@ -63,8 +64,8 @@ The sanitized record is `tests/fixtures/validation-2026-09-09.md`. All disposabl
 ```text
 filename: eysenfalk-pi-herdr-status-1.0.0-rc.0.tgz
 files: 20 explicitly allowlisted
-unpacked bytes: 149158
-sha256: 3cf5296efae8bf058df536070d1033691ad087a13187373808bada44c08cb348
+unpacked bytes: 150314
+sha256: e8ca6d50031d5b6715ed82a640f6692456642d6727c890381456b6fdeea74038
 ```
 
 The validation record and this evaluation are intentionally excluded from the npm artifact, so recording the hash does not create a self-referential package.
@@ -80,7 +81,9 @@ The first three-lane independent review blocked the candidate on two runtime def
 
 The implementation now aborts stale state sends on session changes and republishes after the new session report; partial releases preserve counts but clear ambiguous labels; install/rollback stages and verifies one authority before reload; and all retained evidence was regenerated for the fork. Regression tests cover both runtime findings.
 
-Three independent lanes now approve the release candidate with no remaining findings: runtime/code, documentation/provenance, and retained real-environment evidence. Focused closure reviews confirmed the staged compatibility handoff plus real overlap, attention, and observable-heartbeat evidence.
+A later npm-readiness audit found that the recorded upstream commit did not exist and that only the entrypoint carried a per-file modification notice. The baseline is now pinned to Herdr `v0.9.0` commit `b99002ac99b09e00b4ca692436cb15a6b0d676f1`; all four derivative runtime files carry prominent notices, and the documentation contract enforces both facts.
+
+Independent runtime/code, documentation/provenance, retained real-environment, licensing, and final package reviews now approve the release candidate with no remaining findings. Focused closure reviews confirmed the staged compatibility handoff, real overlap, attention, observable-heartbeat evidence, Apache-2.0 redistribution notices, and final artifact consistency.
 
 ## Cost and complexity
 

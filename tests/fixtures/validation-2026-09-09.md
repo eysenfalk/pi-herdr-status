@@ -43,8 +43,8 @@ npm run smoke:packed
 exact tarball
   filename: eysenfalk-pi-herdr-status-1.0.0-rc.0.tgz
   files: 20 explicitly allowlisted
-  unpacked bytes: 149158
-  sha256: 3cf5296efae8bf058df536070d1033691ad087a13187373808bada44c08cb348
+  unpacked bytes: 150314
+  sha256: e8ca6d50031d5b6715ed82a640f6692456642d6727c890381456b6fdeea74038
 ```
 
 The focused suite covers parent lifecycle, accepted settlement, single and overlapping busy/block leases, ambiguous-label clearing, both reload event orders, prompts, malformed/headless events, label sanitation, session-before-state ordering, session-switch races, monotonically increasing sequences, retry/backoff, stale-send cancellation, shutdown cancellation, heartbeat, RPC acknowledgement/error/size handling, and socket-backed async settlement/relabel behavior.

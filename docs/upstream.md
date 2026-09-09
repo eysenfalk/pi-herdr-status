@@ -8,11 +8,12 @@ Pi Herdr Status is an extracted, standalone downstream fork of the Pi integratio
 | --- | --- |
 | Upstream repository | `https://github.com/herdrdev/herdr` |
 | Upstream path | `src/integration/assets/pi/herdr-agent-state.ts` |
-| Upstream commit | `b9ce14fb9970dbebcff52a620e4247b88265678a` |
+| Upstream release tag | [`v0.9.0`](https://github.com/herdrdev/herdr/releases/tag/v0.9.0) |
+| Upstream commit | [`b99002ac99b09e00b4ca692436cb15a6b0d676f1`](https://github.com/herdrdev/herdr/commit/b99002ac99b09e00b4ca692436cb15a6b0d676f1) |
 | Upstream integration marker | `HERDR_INTEGRATION_VERSION=8` |
 | Upstream license | Apache-2.0 |
 
-The baseline was captured on 2026-09-09. The modified runtime file carries a prominent derivation notice, and [`NOTICE`](../NOTICE) records the same provenance in the distributed package.
+The baseline is the immutable Herdr `v0.9.0` release commit and was verified on 2026-09-09. The upstream integration's lifecycle, transport, and delivery behavior is split across the fork's four runtime files. Each file carries a prominent derivation and modification notice, and [`NOTICE`](../NOTICE) records the same provenance in the distributed package.
 
 ## Downstream changes
 

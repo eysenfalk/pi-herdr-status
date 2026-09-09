@@ -1,3 +1,7 @@
+// Downstream split of Herdr's Pi integration delivery behavior.
+// Derived from herdrdev/herdr src/integration/assets/pi/herdr-agent-state.ts
+// at v0.9.0 (b99002ac99b09e00b4ca692436cb15a6b0d676f1); substantially modified.
+
 import type { StateReport } from "./core.ts";
 
 export interface SessionRef {
