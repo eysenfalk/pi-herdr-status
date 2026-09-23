@@ -67,7 +67,7 @@
 		"@biomejs/biome": "2.5.12",
 		"@earendil-works/pi-coding-agent": "0.85.1",
 		"@resvg/resvg-js": "2.6.2",
-		"@types/node": "22.20.0",
+		"@types/node": "26.6.2",
 		"sharp": "0.35.4",
 		"typescript": "5.9.3"
 	}
